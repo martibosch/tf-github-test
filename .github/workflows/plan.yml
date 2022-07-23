@@ -1,0 +1,59 @@
+name: plan
+
+on:
+  pull_request:
+    branches: [ "main" ]
+
+concurrency:
+  group: ${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    environment: digitalocean
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: checkout Code Repository
+        uses: actions/checkout@v3
+          
+      - name: setup terraform
+        uses: hashicorp/setup-terraform@v1
+        with:
+          terraform_version: 1.2.4
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: initialize terraform
+        # id: tf-init
+        # continue-on-error: true
+        env:
+          TF_WORKSPACE: tf-github-test
+        run: |
+          cd terraform
+          terraform init -input=false
+
+      - name: plan terraform
+        id: plan
+        continue-on-error: true
+        env:
+          TF_WORKSPACE: tf-github-test
+          TF_VAR_gh_token: ${{ secrets.GITHUB_TOKEN}}
+          TF_VAR_tf_api_token: ${{ secrets.TF_API_TOKEN}}
+        run: |
+          cd terraform
+          terraform plan -input=false -no-color
+
+      - name: post plan to github PR
+        uses: mshick/add-pr-comment@v1
+        with:
+          allow-repeats: true
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          repo-token-user-login: 'github-actions[bot]'
+          message: |
+            ```diff
+            ${{ steps.plan.outputs.stdout }}
+            ```
+
+      - name: fail if plan fails
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
